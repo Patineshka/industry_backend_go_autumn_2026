@@ -24,7 +24,6 @@ func ParallelMap[T any, R any](ctx context.Context, workers int, in []T, fn func
 	if len(in) == 0 {
 		return results, nil
 	}
-	// An unbuffered channel hands each index directly to an available worker.
 	jobs := make(chan int)
 	var group sync.WaitGroup
 	for range min(workers, len(in)) {
