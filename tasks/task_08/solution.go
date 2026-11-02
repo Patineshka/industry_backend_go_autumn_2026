@@ -25,7 +25,6 @@ func NewLimiter(clock Clock, ratePerSec float64, burst int) *Limiter {
 	return limiter
 }
 
-// refill is called with mu held. Moving the clock backwards cannot earn tokens.
 func (l *Limiter) refill() {
 	now := l.clock.Now()
 	if !now.After(l.last) {
@@ -37,7 +36,6 @@ func (l *Limiter) refill() {
 		return
 	}
 	missing := float64(l.burst) - l.tokens
-	// Compare against the time to fill before multiplying a potentially huge rate.
 	if elapsed >= missing/l.rate {
 		l.tokens = float64(l.burst)
 	} else {
