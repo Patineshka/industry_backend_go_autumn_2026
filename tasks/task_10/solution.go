@@ -1,11 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -128,11 +129,7 @@ func (h *httpHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := h.repo.Create(*body.Title)
 	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, ErrInvalidTitle) {
-			status = http.StatusBadRequest
-		}
-		http.Error(w, http.StatusText(status), status)
+		writeRepoError(w, err, ErrInvalidTitle, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, http.StatusCreated, task)
@@ -155,11 +152,11 @@ func (h *httpHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		done = values[0] == "true"
 	}
 	tasks := append([]Task{}, h.repo.List(done)...)
-	sort.Slice(tasks, func(i, j int) bool {
-		if tasks[i].UpdatedAt.Equal(tasks[j].UpdatedAt) {
-			return tasks[i].ID < tasks[j].ID
+	slices.SortFunc(tasks, func(a, b Task) int {
+		if order := b.UpdatedAt.Compare(a.UpdatedAt); order != 0 {
+			return order
 		}
-		return tasks[i].UpdatedAt.After(tasks[j].UpdatedAt)
+		return cmp.Compare(a.ID, b.ID)
 	})
 	writeJSON(w, http.StatusOK, tasks)
 }
@@ -173,11 +170,7 @@ func (h *httpHandler) handlePatch(w http.ResponseWriter, r *http.Request, id str
 	}
 	task, err := h.repo.SetDone(id, *body.Done)
 	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, ErrNotFound) {
-			status = http.StatusNotFound
-		}
-		http.Error(w, http.StatusText(status), status)
+		writeRepoError(w, err, ErrNotFound, http.StatusNotFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
@@ -201,4 +194,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// Repository errors share the same fallback; each endpoint supplies its client error.
+func writeRepoError(w http.ResponseWriter, err, clientError error, clientStatus int) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, clientError) {
+		status = clientStatus
+	}
+	http.Error(w, http.StatusText(status), status)
 }

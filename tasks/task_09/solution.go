@@ -24,35 +24,39 @@ func ParallelMap[T any, R any](ctx context.Context, workers int, in []T, fn func
 	if len(in) == 0 {
 		return results, nil
 	}
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	next := 0
+	// An unbuffered channel hands each index directly to an available worker.
+	jobs := make(chan int)
+	var group sync.WaitGroup
 	for range min(workers, len(in)) {
-		wg.Add(1)
+		group.Add(1)
 		go func() {
-			defer wg.Done()
-			for {
-				mu.Lock()
-				if ctx.Err() != nil || next == len(in) {
-					mu.Unlock()
-					return
-				}
-				i := next
-				next++
-				mu.Unlock()
+			defer group.Done()
+			for index := range jobs {
 				if ctx.Err() != nil {
 					return
 				}
-				value, err := fn(ctx, in[i])
+				value, err := fn(ctx, in[index])
 				if err != nil {
-					results[i].Err = err
-				} else {
-					results[i].Value = value
+					results[index].Err = err
+					continue
 				}
+				results[index].Value = value
 			}
 		}()
 	}
-	wg.Wait()
+dispatch:
+	for index := range in {
+		if ctx.Err() != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			break dispatch
+		case jobs <- index:
+		}
+	}
+	close(jobs)
+	group.Wait()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

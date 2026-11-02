@@ -16,29 +16,46 @@ type Limiter struct {
 }
 
 func NewLimiter(clock Clock, ratePerSec float64, burst int) *Limiter {
-	l := &Limiter{clock: clock, rate: ratePerSec, burst: burst}
-	if clock != nil && burst > 0 {
-		l.tokens = float64(burst)
-		l.last = clock.Now()
+	limiter := &Limiter{clock: clock, rate: ratePerSec, burst: burst}
+	if burst <= 0 || clock == nil {
+		return limiter
 	}
-	return l
+	limiter.last = clock.Now()
+	limiter.tokens = float64(burst)
+	return limiter
 }
+
+// refill is called with mu held. Moving the clock backwards cannot earn tokens.
+func (l *Limiter) refill() {
+	now := l.clock.Now()
+	if !now.After(l.last) {
+		return
+	}
+	elapsed := now.Sub(l.last).Seconds()
+	l.last = now
+	if l.rate <= 0 {
+		return
+	}
+	missing := float64(l.burst) - l.tokens
+	// Compare against the time to fill before multiplying a potentially huge rate.
+	if elapsed >= missing/l.rate {
+		l.tokens = float64(l.burst)
+	} else {
+		l.tokens += elapsed * l.rate
+	}
+}
+
 func (l *Limiter) AllowN(n int) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.clock == nil || l.burst <= 0 || n <= 0 || n > l.burst {
+	if n <= 0 || n > l.burst || l.burst <= 0 || l.clock == nil {
 		return false
 	}
-	now := l.clock.Now()
-	if now.After(l.last) {
-		if l.rate > 0 {
-			l.tokens = min(float64(l.burst), l.tokens+now.Sub(l.last).Seconds()*l.rate)
-		}
-		l.last = now
-	}
-	if l.tokens < float64(n) {
+	l.refill()
+	cost := float64(n)
+	if cost > l.tokens {
 		return false
 	}
-	l.tokens -= float64(n)
+	l.tokens -= cost
 	return true
 }
