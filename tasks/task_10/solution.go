@@ -196,7 +196,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// Repository errors share the same fallback; each endpoint supplies its client error.
 func writeRepoError(w http.ResponseWriter, err, clientError error, clientStatus int) {
 	status := http.StatusInternalServerError
 	if errors.Is(err, clientError) {
