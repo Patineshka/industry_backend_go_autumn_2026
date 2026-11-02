@@ -1,28 +1,48 @@
 package main
 
-import "container/list"
+import (
+	"container/list"
+)
 
+type LRU[K comparable, V any] interface {
+	Get(K) (V, bool)
+	Set(K, V)
+}
 type entry[K comparable, V any] struct {
 	key   K
 	value V
 }
 type LRUCache[K comparable, V any] struct {
 	capacity int
-	ll       list.List
-	items    map[K]*list.Element
+
+	ll    list.List
+	items map[K]*list.Element
 }
 
 func NewLRUCache[K comparable, V any](capacity int) *LRUCache[K, V] {
-	panic("TODO: implement")
+	return &LRUCache[K, V]{capacity: capacity, items: make(map[K]*list.Element)}
 }
 func (c *LRUCache[K, V]) Get(key K) (value V, ok bool) {
-	panic("TODO: implement")
+
+	if element, exists := c.items[key]; exists {
+		c.ll.MoveToFront(element)
+		return element.Value.(entry[K, V]).value, true
+	}
+	return value, false
 }
 func (c *LRUCache[K, V]) Set(key K, value V) {
-	panic("TODO: implement")
-}
 
-type LRU[K comparable, V any] interface {
-	Get(K) (V, bool)
-	Set(K, V)
+	if c.capacity <= 0 {
+		return
+	}
+	if element, exists := c.items[key]; exists {
+		element.Value = entry[K, V]{key: key, value: value}
+		return
+	}
+	if len(c.items) >= c.capacity {
+		oldest := c.ll.Back()
+		delete(c.items, oldest.Value.(entry[K, V]).key)
+		c.ll.Remove(oldest)
+	}
+	c.items[key] = c.ll.PushFront(entry[K, V]{key: key, value: value})
 }
